@@ -1,0 +1,179 @@
+# Reusable deploy to Cloudflare (Pages or Workers) for my repos.
+#
+# A caller's deploy job looks like this:
+#
+#   deploy:
+#     needs: test
+#     uses: lucasdaddiego/.github/.github/workflows/cloudflare-deploy.yml@main
+#     with:
+#       wrangler-command: pages deploy dist --project-name=my-project
+#       account-id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+#     secrets:
+#       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+#
+# The caller keeps its triggers, test jobs, `if:` gates and concurrency. This
+# workflow turns the checked-out commit into a deployment: checkout, Node,
+# install, build, check, (artifact), wrangler, post-deploy. Every step but the
+# checkout and the wrangler call is optional and driven by an input.
+#
+# The run steps execute in `working-directory` with bash (-e, -o pipefail). The
+# `install`, `build`, `check` and `post-deploy` inputs are shell commands, so a
+# caller can chain them (`a && b`) or pass a block scalar, one command per line.
+#
+# Actions are pinned to commit SHAs (the tag in the comment is what Dependabot
+# bumps in this repo). Callers reference this file by branch (`@main`): it is my
+# own public repo, and the pins live here.
+
+name: Cloudflare deploy
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node.js version for setup-node.
+        type: string
+        default: "24"
+      working-directory:
+        description: Directory the install, build, check, wrangler and post-deploy commands run in.
+        type: string
+        default: "."
+      install:
+        description: Install command. An empty string skips the step.
+        type: string
+        default: npm ci
+      build:
+        description: Build command, run after the install. Empty skips the step.
+        type: string
+        default: ""
+      check:
+        description: Shell command run after the build, e.g. a smoke test of the build output. Empty skips the step.
+        type: string
+        default: ""
+      artifact:
+        description: Name of an artifact an earlier job of the caller uploaded. It is downloaded into working-directory/artifact-path before the deploy. Empty skips the step.
+        type: string
+        default: ""
+      artifact-path:
+        description: Directory, relative to working-directory, that the artifact is extracted into.
+        type: string
+        default: dist
+      wrangler-command:
+        description: The wrangler command without the leading "wrangler", e.g. "deploy" or "pages deploy dist --project-name=x".
+        type: string
+        required: true
+      wrangler-version:
+        description: The wrangler version wrangler-action installs.
+        type: string
+        default: "4.146.0"
+      account-id:
+        description: Cloudflare account id, usually the CLOUDFLARE_ACCOUNT_ID repo variable. Leave it empty when the caller passes the CLOUDFLARE_ACCOUNT_ID secret instead (the secrets context is not available in "with").
+        type: string
+        default: ""
+      post-deploy:
+        description: Shell command run after the deploy, e.g. an assertion against the live site. Empty skips the step.
+        type: string
+        default: ""
+    secrets:
+      CLOUDFLARE_API_TOKEN:
+        description: API token with the permissions the wrangler command needs.
+        required: true
+      CLOUDFLARE_ACCOUNT_ID:
+        description: Cloudflare account id, for repos that store it as a secret. The account-id input wins when both are set.
+        required: false
+    outputs:
+      deployment-url:
+        description: The URL wrangler reported for the deployment (empty when wrangler printed none).
+        value: ${{ jobs.deploy.outputs.deployment-url }}
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WRANGLER_SEND_METRICS: "false"
+    outputs:
+      deployment-url: ${{ steps.deploy.outputs.deployment-url }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Account id present?
+        env:
+          FROM_INPUT: ${{ inputs.account-id }}
+          FROM_SECRET: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$FROM_INPUT" ] && [ -z "$FROM_SECRET" ]; then
+            echo "::error::Pass the account-id input or the CLOUDFLARE_ACCOUNT_ID secret."
+            exit 1
+          fi
+
+      # setup-node caches ~/.npm only when there is a lockfile to key it on and
+      # an install step that will use it.
+      - name: Lockfile present?
+        id: lockfile
+        env:
+          INSTALL: ${{ inputs.install }}
+        run: |
+          if [ -n "$INSTALL" ] && [ -f package-lock.json ]; then
+            echo "cache=npm" >> "$GITHUB_OUTPUT"
+            echo "path=$(realpath --relative-to="$GITHUB_WORKSPACE" package-lock.json)" >> "$GITHUB_OUTPUT"
+          else
+            echo "cache=" >> "$GITHUB_OUTPUT"
+            echo "path=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ inputs.node-version }}
+          package-manager-cache: false
+          cache: ${{ steps.lockfile.outputs.cache }}
+          cache-dependency-path: ${{ steps.lockfile.outputs.path }}
+
+      - name: Install
+        if: inputs.install != ''
+        run: ${{ inputs.install }}
+
+      - name: Build
+        if: inputs.build != ''
+        run: ${{ inputs.build }}
+
+      - name: Check the build
+        if: inputs.check != ''
+        run: ${{ inputs.check }}
+
+      - name: Download the build artifact
+        if: inputs.artifact != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact }}
+          path: ${{ inputs.working-directory }}/${{ inputs.artifact-path }}
+
+      - name: Deploy with wrangler
+        id: deploy
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ inputs.account-id || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: ${{ inputs.working-directory }}
+          wranglerVersion: ${{ inputs.wrangler-version }}
+          command: ${{ inputs.wrangler-command }}
+
+      - name: Post-deploy check
+        if: inputs.post-deploy != ''
+        run: ${{ inputs.post-deploy }}
+
+      - name: Deployment URL -> summary
+        if: steps.deploy.outputs.deployment-url != ''
+        env:
+          URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: |
+          echo "Deployed: $URL" >> "$GITHUB_STEP_SUMMARY"
