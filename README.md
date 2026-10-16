@@ -33,14 +33,14 @@ jobs:
 | --- | --- | --- |
 | `wrangler-command` | required | The wrangler command without the leading `wrangler`: `deploy`, `pages deploy dist --project-name=x`, … |
 | `account-id` | `""` | Cloudflare account id, usually `${{ vars.CLOUDFLARE_ACCOUNT_ID }}`. Leave empty when the repo stores it as a secret and pass the `CLOUDFLARE_ACCOUNT_ID` secret instead (`secrets` is not available in `with`). One of the two is required. |
-| `node-version` | `24` | Node.js version for setup-node. |
+| `node-version` | `26` | Node.js version for setup-node. |
 | `working-directory` | `.` | Directory the install, build, check, wrangler and post-deploy commands run in. |
 | `install` | `npm ci` | Install command. `""` skips it. setup-node caches `~/.npm` only when a `package-lock.json` exists there and the install runs. |
 | `build` | `""` | Build command, run after the install. |
 | `check` | `""` | Shell command run after the build, e.g. `node scripts/check-dist.mjs`. |
 | `artifact` | `""` | Name of an artifact an earlier caller job uploaded (`actions/upload-artifact`). Downloaded before the deploy. |
 | `artifact-path` | `dist` | Directory, relative to `working-directory`, the artifact is extracted into. |
-| `wrangler-version` | `4.146.0` | The wrangler version `cloudflare/wrangler-action` installs. |
+| `wrangler-version` | `4.151.0` | The wrangler version `cloudflare/wrangler-action` installs. |
 | `post-deploy` | `""` | Shell command run after the deploy, e.g. an assertion against the live site. |
 
 ### Secrets
