@@ -64,7 +64,7 @@ on:
       wrangler-version:
         description: The wrangler version wrangler-action installs.
         type: string
-        default: "4.151.0"
+        default: "4.152.0"
       account-id:
         description: Cloudflare account id, usually the CLOUDFLARE_ACCOUNT_ID repo variable. Leave it empty when the caller passes the CLOUDFLARE_ACCOUNT_ID secret instead (the secrets context is not available in "with").
         type: string

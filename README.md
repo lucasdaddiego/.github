@@ -40,7 +40,7 @@ jobs:
 | `check` | `""` | Shell command run after the build, e.g. `node scripts/check-dist.mjs`. |
 | `artifact` | `""` | Name of an artifact an earlier caller job uploaded (`actions/upload-artifact`). Downloaded before the deploy. |
 | `artifact-path` | `dist` | Directory, relative to `working-directory`, the artifact is extracted into. |
-| `wrangler-version` | `4.151.0` | The wrangler version `cloudflare/wrangler-action` installs. |
+| `wrangler-version` | `4.152.0` | The wrangler version `cloudflare/wrangler-action` installs. |
 | `post-deploy` | `""` | Shell command run after the deploy, e.g. an assertion against the live site. |
 
 ### Secrets
